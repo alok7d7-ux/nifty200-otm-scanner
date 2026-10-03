@@ -133,12 +133,13 @@ def main():
     df_results = pd.DataFrame(all_signals)
     output_file = "nifty200_otm_breakouts.csv"
 
+    # Always generate CSV file to avoid upload-artifact errors
     if not df_results.empty:
         print("\n================ TOP OTM OPTION BREAKOUT SETUPS ================")
         print(df_results.to_string(index=False))
         df_results.to_csv(output_file, index=False)
     else:
-        print("\nNo high-probability OTM setups matched the scanner criteria.")
+        print("\nNo matching OTM setups found today. Exporting empty results CSV.")
         columns = ['Symbol', 'Type', 'Spot Price', 'Spot Chg (%)', 'Vol Spike', 
                    'Strike', 'OTM %', 'Opt Price', 'Opt Price Chg', 'OI', 'Signal']
         pd.DataFrame(columns=columns).to_csv(output_file, index=False)
