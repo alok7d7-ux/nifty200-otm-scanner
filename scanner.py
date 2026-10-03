@@ -28,7 +28,7 @@ def classify_otm_signal(price_change, oi_change, option_type):
         elif price_change > 0 and oi_change < 0:
             return "Short Covering (EXPLOSIVE CE BUY)"
         else:
-            return "Long Unwinding (Weak)"
+            return "Neutral / Unchanged (Market Closed)"
     elif option_type == 'PUT':
         if price_change > 0 and oi_change > 0:
             return "Long Buildup (Bearish)"
@@ -37,22 +37,22 @@ def classify_otm_signal(price_change, oi_change, option_type):
         elif price_change > 0 and oi_change < 0:
             return "Short Covering (EXPLOSIVE PE BUY)"
         else:
-            return "Long Unwinding (Weak)"
+            return "Neutral / Unchanged (Market Closed)"
 
 def analyze_ticker(ticker):
     try:
         stock = yf.Ticker(ticker)
         history = stock.history(period="10d", interval="1d")
-        if len(history) < 5:
+        if len(history) < 2:
             return []
 
         spot_price = history['Close'].iloc[-1]
-        prev_close = history['Close'].iloc[-2]
-        spot_change_pct = ((spot_price - prev_close) / prev_close) * 100
+        prev_close = history['Close'].iloc[-2] if len(history) > 1 else spot_price
+        spot_change_pct = ((spot_price - prev_close) / prev_close) * 100 if prev_close > 0 else 0
         
         latest_vol = history['Volume'].iloc[-1]
-        avg_vol = history['Volume'].iloc[-5:-1].mean()
-        vol_spike = latest_vol > (1.3 * avg_vol)
+        avg_vol = history['Volume'].iloc[-5:-1].mean() if len(history) >= 5 else latest_vol
+        vol_spike = latest_vol > (1.2 * avg_vol)
 
         expirations = stock.options
         if not expirations:
@@ -63,51 +63,49 @@ def analyze_ticker(ticker):
         
         results = []
 
-        # Analyze OTM Calls (0.5% to 3.0% distance)
+        # Analyze OTM Calls (0.5% to 5.0% distance)
         calls = chain.calls[chain.calls['strike'] > spot_price].copy()
         if not calls.empty:
             calls['OTM_Pct'] = ((calls['strike'] - spot_price) / spot_price) * 100
-            slight_otm_calls = calls[(calls['OTM_Pct'] >= 0.5) & (calls['OTM_Pct'] <= 3.0)]
+            otm_calls = calls[(calls['OTM_Pct'] >= 0.5) & (calls['OTM_Pct'] <= 5.0)]
 
-            for _, row in slight_otm_calls.iterrows():
+            for _, row in otm_calls.iterrows():
                 signal = classify_otm_signal(row.get('change', 0), row.get('openInterest', 0), 'CALL')
-                if signal in ["Short Covering (EXPLOSIVE CE BUY)", "Long Buildup (Bullish)"]:
-                    results.append({
-                        'Symbol': ticker.replace('.NS', ''),
-                        'Type': 'CE',
-                        'Spot Price': round(spot_price, 2),
-                        'Spot Chg (%)': round(spot_change_pct, 2),
-                        'Vol Spike': vol_spike,
-                        'Strike': row['strike'],
-                        'OTM %': round(row['OTM_Pct'], 2),
-                        'Opt Price': round(row['lastPrice'], 2),
-                        'Opt Price Chg': round(row.get('change', 0), 2),
-                        'OI': row.get('openInterest', 0),
-                        'Signal': signal
-                    })
+                results.append({
+                    'Symbol': ticker.replace('.NS', ''),
+                    'Type': 'CE',
+                    'Spot Price': round(spot_price, 2),
+                    'Spot Chg (%)': round(spot_change_pct, 2),
+                    'Vol Spike': vol_spike,
+                    'Strike': row['strike'],
+                    'OTM %': round(row['OTM_Pct'], 2),
+                    'Opt Price': round(row.get('lastPrice', 0), 2),
+                    'Opt Price Chg': round(row.get('change', 0), 2),
+                    'OI': int(row.get('openInterest', 0)) if pd.notnull(row.get('openInterest')) else 0,
+                    'Signal': signal
+                })
 
-        # Analyze OTM Puts (0.5% to 3.0% distance)
+        # Analyze OTM Puts (0.5% to 5.0% distance)
         puts = chain.puts[chain.puts['strike'] < spot_price].copy()
         if not puts.empty:
             puts['OTM_Pct'] = ((spot_price - puts['strike']) / spot_price) * 100
-            slight_otm_puts = puts[(puts['OTM_Pct'] >= 0.5) & (puts['OTM_Pct'] <= 3.0)]
+            otm_puts = puts[(puts['OTM_Pct'] >= 0.5) & (puts['OTM_Pct'] <= 5.0)]
 
-            for _, row in slight_otm_puts.iterrows():
+            for _, row in otm_puts.iterrows():
                 signal = classify_otm_signal(row.get('change', 0), row.get('openInterest', 0), 'PUT')
-                if signal in ["Short Covering (EXPLOSIVE PE BUY)", "Long Buildup (Bearish)"]:
-                    results.append({
-                        'Symbol': ticker.replace('.NS', ''),
-                        'Type': 'PE',
-                        'Spot Price': round(spot_price, 2),
-                        'Spot Chg (%)': round(spot_change_pct, 2),
-                        'Vol Spike': vol_spike,
-                        'Strike': row['strike'],
-                        'OTM %': round(row['OTM_Pct'], 2),
-                        'Opt Price': round(row['lastPrice'], 2),
-                        'Opt Price Chg': round(row.get('change', 0), 2),
-                        'OI': row.get('openInterest', 0),
-                        'Signal': signal
-                    })
+                results.append({
+                    'Symbol': ticker.replace('.NS', ''),
+                    'Type': 'PE',
+                    'Spot Price': round(spot_price, 2),
+                    'Spot Chg (%)': round(spot_change_pct, 2),
+                    'Vol Spike': vol_spike,
+                    'Strike': row['strike'],
+                    'OTM %': round(row['OTM_Pct'], 2),
+                    'Opt Price': round(row.get('lastPrice', 0), 2),
+                    'Opt Price Chg': round(row.get('change', 0), 2),
+                    'OI': int(row.get('openInterest', 0)) if pd.notnull(row.get('openInterest')) else 0,
+                    'Signal': signal
+                })
 
         return results
 
@@ -133,13 +131,11 @@ def main():
     df_results = pd.DataFrame(all_signals)
     output_file = "nifty200_otm_breakouts.csv"
 
-    # Always generate CSV file to avoid upload-artifact errors
     if not df_results.empty:
-        print("\n================ TOP OTM OPTION BREAKOUT SETUPS ================")
-        print(df_results.to_string(index=False))
+        print(f"\nScan completed. Found {len(df_results)} OTM contracts.")
         df_results.to_csv(output_file, index=False)
     else:
-        print("\nNo matching OTM setups found today. Exporting empty results CSV.")
+        print("\nNo OTM option contracts retrieved.")
         columns = ['Symbol', 'Type', 'Spot Price', 'Spot Chg (%)', 'Vol Spike', 
                    'Strike', 'OTM %', 'Opt Price', 'Opt Price Chg', 'OI', 'Signal']
         pd.DataFrame(columns=columns).to_csv(output_file, index=False)
