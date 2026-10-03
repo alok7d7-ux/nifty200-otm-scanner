@@ -2,9 +2,8 @@ name: Nifty 200 OTM Scanner
 
 on:
   schedule:
-    # Runs at 10:00 UTC (3:30 PM IST) Monday through Friday
     - cron: '0 10 * * 1-5'
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   run-scanner:
@@ -21,8 +20,8 @@ jobs:
 
     - name: Install Dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        python -m pip install --upgrade pip setuptools wheel
+        pip install pandas yfinance requests
 
     - name: Execute Scanner Script
       run: python scanner.py
@@ -32,3 +31,4 @@ jobs:
       with:
         name: nifty200-otm-scan-results
         path: nifty200_otm_breakouts.csv
+        if-no-files-found: ignore
